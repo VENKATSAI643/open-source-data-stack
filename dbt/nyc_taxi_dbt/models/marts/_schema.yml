@@ -1,0 +1,64 @@
+version: 2
+
+models:
+  - name: stg_taxi_trips
+    description: "Staging: raw trips, renamed + cast, no joins"
+    columns:
+      - name: pickup_datetime
+        tests: [not_null]
+      - name: dropoff_datetime
+        tests: [not_null]
+      - name: pickup_zone_id
+        tests: [not_null]
+      - name: total_amount
+        tests: [not_null]
+
+  - name: stg_taxi_zones
+    description: "Staging: taxi zones lookup"
+    columns:
+      - name: zone_id
+        tests:
+          - not_null
+          - unique
+      - name: zone_name
+        tests: [not_null]
+
+  - name: dim_zones
+    description: "Dimension: one row per NYC taxi zone"
+    columns:
+      - name: zone_id
+        tests:
+          - not_null
+          - unique
+      - name: borough
+        tests:
+          - not_null
+
+  - name: fct_trips
+    description: "Fact table: one row per trip, grain = trip"
+    columns:
+      - name: pickup_date
+        tests: [not_null]
+      - name: pickup_zone_id
+        tests:
+          - not_null
+      - name: dropoff_zone_id
+        tests:
+          - not_null
+      - name: total_amount
+        tests: [not_null]
+      - name: trip_duration_min
+        tests: [not_null]
+      - name: payment_type
+
+  - name: agg_daily_revenue
+    description: "Pre-aggregated daily revenue for Superset dashboards"
+    columns:
+      - name: pickup_date
+        tests:
+          - not_null
+          - unique
+      - name: trip_count
+        tests: [not_null]
+      - name: total_revenue
+        tests: [not_null]

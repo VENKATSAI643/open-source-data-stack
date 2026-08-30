@@ -1,0 +1,76 @@
+version: 2
+
+sources:
+  - name: nyc_taxi_raw
+    database: nyc_taxi_iceberg   # ClickHouse database mapped to Iceberg on MinIO
+    schema: nyc_taxi_iceberg
+    tables:
+      - name: yellow_trips
+        description: "Raw NYC Yellow Taxi trip records (Jan 2023) loaded from public TLC dataset"
+        columns:
+          - name: VendorID
+            description: "TPEP provider (1=Creative Mobile, 2=VeriFone)"
+          - name: tpep_pickup_datetime
+            description: "Meter engaged timestamp"
+          - name: tpep_dropoff_datetime
+            description: "Meter disengaged timestamp"
+          - name: passenger_count
+            description: "Number of passengers (driver-entered)"
+          - name: trip_distance
+            description: "Trip distance in miles"
+          - name: RatecodeID
+            description: "Final rate code (1=Standard, 2=JFK, 3=Newark, 4=Nassau/Westchester, 5=Negotiated, 6=Group)"
+          - name: store_and_fwd_flag
+            description: "Whether trip record was stored locally before sending (Y/N)"
+          - name: PULocationID
+            description: "TLC Taxi Zone where meter engaged"
+          - name: DOLocationID
+            description: "TLC Taxi Zone where meter disengaged"
+          - name: payment_type
+            description: "Payment method (1=CC, 2=Cash, 3=No charge, 4=Dispute, 5=Unknown, 6=Voided)"
+          - name: fare_amount
+            description: "Metered fare computed by taximeter"
+          - name: extra
+            description: "Miscellaneous extras and surcharges"
+          - name: mta_tax
+            description: "MTA tax automatically triggered based on metered rate"
+          - name: tip_amount
+            description: "Credit card tips (cash tips not included)"
+          - name: tolls_amount
+            description: "Total amount of all tolls paid"
+          - name: improvement_surcharge
+            description: "Improvement surcharge assessed on hailed trips"
+          - name: total_amount
+            description: "Total amount charged to passengers"
+          - name: congestion_surcharge
+            description: "Congestion surcharge for trips in/from Manhattan below 96th St"
+          - name: airport_fee
+            description: "Airport fee for pickup from LGA or JFK"
+
+      - name: taxi_zones
+        description: "NYC TLC Taxi Zone lookup — 265 zones across 6 boroughs"
+        columns:
+          - name: LocationID
+            description: "Zone identifier (matches PULocationID/DOLocationID)"
+          - name: Borough
+            description: "NYC borough name"
+          - name: Zone
+            description: "Zone name"
+          - name: service_zone
+            description: "Service zone category (Yellow Zone, Boro Zone, Airports, N/A)"
+
+  - name: nyc_taxi_raw_legacy
+    database: nyc_taxi
+    schema: nyc_taxi
+    tables:
+      - name: taxi_zones
+        description: "NYC TLC Taxi Zone lookup — 265 zones across 6 boroughs"
+        columns:
+          - name: LocationID
+            description: "Zone identifier (matches PULocationID/DOLocationID)"
+          - name: Borough
+            description: "NYC borough name"
+          - name: Zone
+            description: "Zone name"
+          - name: service_zone
+            description: "Service zone category (Yellow Zone, Boro Zone, Airports, N/A)"

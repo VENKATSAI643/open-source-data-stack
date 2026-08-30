@@ -1,0 +1,18 @@
+nyc_taxi_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: clickhouse
+      schema: nyc_taxi_marts
+      # Uses the clickhouse-proxy (socat) service from governance-compose.yml.
+      # The proxy bridges WSL2 localhost:18123 → clickhouse:8123 via Docker networking.
+      # This avoids WSL2 port-forwarding instability when connecting natively from WSL2.
+      # See governance-compose.yml → clickhouse-proxy service.
+      host: "{{ env_var('DBT_CLICKHOUSE_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_CLICKHOUSE_PORT', '18123') | as_number }}"
+      user: default
+      password: ""
+      secure: false
+      verify: false
+      connect_timeout: 10
+      send_receive_timeout: 300

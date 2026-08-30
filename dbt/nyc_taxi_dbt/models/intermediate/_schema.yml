@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: int_trips_enriched
+    description: "Intermediate model that joins staging trips with pickup and dropoff zones."
+    columns:
+      - name: vendor_id
+      - name: pickup_datetime
+      - name: dropoff_datetime
+      - name: passenger_count
+      - name: trip_distance
+      - name: pu_location_id
+      - name: do_location_id
+      - name: pickup_zone
+      - name: dropoff_zone
+      - name: trip_duration_min
+        description: "Duration of the trip in minutes"
+        tests:
+          - not_null
+      - name: avg_speed_mph
+        description: "Average speed in MPH"
