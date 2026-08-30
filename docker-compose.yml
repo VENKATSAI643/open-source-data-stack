@@ -1,0 +1,219 @@
+# Project 5 — Governance & Serving Layer
+# Adds: Marquez (lineage), Superset (BI), Airflow (minimal orchestration scaffolding), maildev (SMTP)
+#
+# IMPORTANT: Before running, find your existing ClickHouse Docker network:
+#   docker network ls
+# Then update the 'name' field under 'existing-data-net' below to match.
+#
+# Startup order (run staged, verify each before next):
+#   docker compose -f governance-compose.yml up -d marquez-db marquez marquez-web
+#   docker compose -f governance-compose.yml up -d superset
+#   docker compose -f governance-compose.yml up -d airflow
+#   docker compose -f governance-compose.yml up -d maildev
+#
+# Service ports:
+#   Marquez API  → http://localhost:5000
+#   Marquez UI   → http://localhost:3000
+#   Superset     → http://localhost:8088  (admin / admin)
+#   Airflow      → http://localhost:8080  (airflow / airflow)
+#   maildev UI   → http://localhost:1080
+
+networks:
+  governance-net:
+    driver: bridge
+
+  # MinIO + ClickHouse network (Project 1) — Superset & Airflow reach ClickHouse here
+  existing-data-net:
+    external: true
+    name: minioandclickhouse_warehouse_net
+
+  # Kafka + ClickHouse network (Project 4) — optional, for future Kafka connectivity
+  kafka-net:
+    external: true
+    name: kafkaandclickhouse_default
+
+services:
+
+  # ── LINEAGE BACKEND ──────────────────────────────────────────────────────────
+
+  marquez-db:
+    image: postgres:15
+    container_name: marquez-db
+    restart: unless-stopped
+    networks:
+      - governance-net
+    environment:
+      POSTGRES_USER: ${MARQUEZ_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${MARQUEZ_POSTGRES_PASSWORD}
+      POSTGRES_DB: marquez
+    volumes:
+      - marquez-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U marquez"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  marquez:
+    image: marquezproject/marquez:latest
+    container_name: marquez
+    restart: unless-stopped
+    networks:
+      - governance-net
+      - existing-data-net
+    ports:
+      - "5000:5000"   # REST API  (OpenLineage events + queries)
+      - "5001:5001"   # Admin UI
+    depends_on:
+      marquez-db:
+        condition: service_healthy
+    environment:
+      MARQUEZ_PORT: 5000
+      MARQUEZ_ADMIN_PORT: 5001
+      # These are substituted into marquez.yml via ${} syntax
+      POSTGRES_HOST: marquez-db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: marquez
+      POSTGRES_USER: ${MARQUEZ_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${MARQUEZ_POSTGRES_PASSWORD}
+    volumes:
+      # Mount directly into Marquez's working dir — /usr/src/app/
+      - ./config/marquez/marquez.yml:/usr/src/app/marquez.yml:ro
+    command: ["--config", "marquez.yml"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:5000/api/v1/namespaces || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  marquez-web:
+    image: marquezproject/marquez-web:latest
+    container_name: marquez-web
+    restart: unless-stopped
+    networks:
+      - governance-net
+    ports:
+      - "3000:3000"
+    depends_on:
+      marquez:
+        condition: service_healthy
+    environment:
+      MARQUEZ_HOST: marquez
+      MARQUEZ_PORT: 5000
+      WEB_PORT: 3000
+
+  # ── BI / DASHBOARDS ──────────────────────────────────────────────────────────
+
+  superset:
+    image: apache/superset:latest
+    container_name: superset
+    restart: unless-stopped
+    networks:
+      - governance-net
+      - existing-data-net
+      - kafka-net
+    ports:
+      - "8088:8088"
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY}
+      SUPERSET_FEATURE_FLAGS: '{"ALERT_REPORTS": true}'
+      # SMTP → maildev (configured in Phase 4 alerting setup)
+      SMTP_HOST: maildev
+      SMTP_PORT: "1025"
+      SMTP_STARTTLS: "false"
+      SMTP_SSL: "false"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+      SMTP_MAIL_FROM: superset@local.dev
+    volumes:
+      - superset-data:/app/superset_home
+    command: |
+      /bin/sh -c "
+        superset db upgrade &&
+        superset fab create-admin --username ${SUPERSET_ADMIN_USERNAME} --firstname Superset --lastname Admin --email admin@admin.com --password ${SUPERSET_ADMIN_PASSWORD} &&
+        superset init &&
+        /usr/bin/run-server.sh"
+    depends_on:
+      - maildev
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8088/health || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+
+  # ── ORCHESTRATION SCAFFOLDING (minimal — NOT the Airflow deep dive) ──────────
+  # This is a fresh Airflow instance used only to emit OpenLineage events.
+  # Sensors, branching, backfills, XComs → those are Project 2 (Airflow deep dive).
+
+  airflow:
+    build: .
+    user: "${AIRFLOW_UID:-50000}:0"
+    container_name: airflow
+    restart: unless-stopped
+    networks:
+      - governance-net
+      - existing-data-net
+      - kafka-net
+    ports:
+      - "8080:8080"
+    environment:
+      # SequentialExecutor is the only executor compatible with SQLite (standalone mode)
+      # LocalExecutor requires PostgreSQL — reserved for the dedicated Airflow deep-dive project
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__WEB_SERVER_PORT: 8080
+      # Prevents "CSRF session token is missing" errors on container restarts
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD}
+      # OpenLineage auto-instrumentation — events sent to Marquez
+      OPENLINEAGE_URL: http://marquez:5000
+      OPENLINEAGE_NAMESPACE: nyc_taxi_pipeline
+      # Override Project 3's localhost MINIO_ENDPOINT to point to the Docker network hostname
+      MINIO_ENDPOINT: http://minio:9000
+      # Override Project 4's localhost dbt target to point to ClickHouse container directly
+      DBT_CLICKHOUSE_HOST: clickhouse
+      DBT_CLICKHOUSE_PORT: 8123
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./dbt/nyc_taxi_dbt:/opt/dbt/nyc_taxi_dbt
+      - ../Spark and Iceberg/spark-iceberg-lakehouse:/opt/project3
+      - ./spark_jobs:/opt/spark_jobs
+    command: standalone
+    depends_on:
+      marquez:
+        condition: service_healthy
+
+  # ── LOCAL SMTP CATCHER (for Superset alerts & reports testing) ───────────────
+
+  maildev:
+    image: maildev/maildev:latest
+    container_name: maildev
+    restart: unless-stopped
+    networks:
+      - governance-net
+    ports:
+      - "1080:1080"   # Web UI — view captured emails at http://localhost:1080
+      - "1025:1025"   # SMTP endpoint
+
+  # ── CLICKHOUSE PROXY (WSL2 workaround) ───────────────────────────────────────
+  # WSL2's port-forward to Docker containers is unreliable for some containers.
+  # socat bridges WSL2 localhost:18123 → clickhouse:8123 through Docker networking.
+  # dbt profiles.yml uses host: localhost, port: 18123
+  # Remove this once WSL2/Docker networking is stable in your environment.
+
+  clickhouse-proxy:
+    image: alpine/socat:latest
+    container_name: clickhouse-proxy
+    restart: unless-stopped
+    networks:
+      - governance-net
+      - existing-data-net    # reaches clickhouse container by name
+    ports:
+      - "18123:18123"        # exposed to WSL2 localhost
+    command: TCP-LISTEN:18123,fork,reuseaddr TCP:clickhouse:8123
+
+volumes:
+  marquez-db-data:
+  superset-data:
+  airflow-data:

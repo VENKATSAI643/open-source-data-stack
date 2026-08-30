@@ -1,0 +1,48 @@
+# ── Environment & Secrets ──
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# ── Python / Virtualenvs ──
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+governance/
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.coverage
+htmlcov/
+
+# ── dbt Artifacts ──
+dbt/nyc_taxi_dbt/target/
+dbt/nyc_taxi_dbt/dbt_packages/
+dbt/nyc_taxi_dbt/logs/
+
+# ── Great Expectations ──
+gx/uncommitted/
+
+# ── Airflow Artifacts ──
+airflow/logs/
+standalone_admin_password.txt
+airflow.cfg
+airflow.db
+webserver_config.py
+
+# ── Docker ──
+.dockerignore
+
+# ── Scratch & Debugging ──
+scratch/
+
+# ── OS / IDE ──
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

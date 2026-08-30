@@ -1,0 +1,17 @@
+<!-- ClickHouse listen_host override
+     Allows external connections (from Docker network, WSL2, dbt, Superset)
+     
+     By default ClickHouse only listens on 127.0.0.1 (loopback only).
+     This override adds 0.0.0.0 so all network interfaces are reachable.
+     
+     To apply without recreating the container:
+       docker exec clickhouse bash -c "cp /docker-entrypoint-initdb.d/listen_override.xml /etc/clickhouse-server/config.d/"
+       docker restart clickhouse
+       
+     To make permanent in Project 4's docker-compose.yml, add this volume to the clickhouse service:
+       volumes:
+         - ./clickhouse-config/listen_override.xml:/etc/clickhouse-server/config.d/listen_override.xml:ro
+-->
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+</clickhouse>
